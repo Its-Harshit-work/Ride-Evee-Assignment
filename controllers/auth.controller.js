@@ -7,12 +7,15 @@ const { sendEmail } = require('../utils/otp.util');
 const signup = async (req, res) => {
     try {
       const { username, email, phone, password} = req.body;  
+      if (!/^(0\d{10}|[1-9]\d{9})$/.test(phone)) {
+        return res.status(400).json({ message: "Invalid phone number. It must be exactly 10 digits or 11 digits if it starts with 0." });
+      }
       const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
       if (existingUser) {
         return res.status(400).json({ message: "Username or email already exists." });
       }
-  
-      const hashedPassword = await bcrypt.hash(password, 10);
+      const hashedPassword = password;
+      // const hashedPassword = await bcrypt.hash(password, 10);
       const otp = crypto.randomInt(100000, 999999).toString();
       const hashedOtp = await bcrypt.hash(otp, 10); // Encrypt the OTP
       const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes from now
@@ -67,10 +70,11 @@ const signup = async (req, res) => {
       }
   
       user.isVerified = true;
-      user.otp = null; // Clear the OTP after verification
-      user.otpExpiresAt = null; // Clear the expiration time
-
+      user.otp = null;
+      user.otpExpiresAt = null;
       await user.save();
+
+      // console.log("User after OTP verification:", user);
   
       res.status(200).json({ message: "OTP verified successfully" });
     } catch (error) {
@@ -84,21 +88,29 @@ const signup = async (req, res) => {
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ $or: [{ email }] });
+    const user = await User.findOne({ email });
     if (!user || !user.isVerified) {
       return res.status(400).json({ message: "User not found or not verified." });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
+
+    // console.log("Entered Password:", password);
+    // console.log("Stored Hashed Password:", user.password);
+    // console.log("Password Match:", isMatch);
+
     if (!isMatch) {
       return res.status(400).json({ message: "Incorrect password." });
     }
+
+    // console.log("JWT Secret:", process.env.JWT_SECRET);
 
     const token = jwt.sign(
       { id: user._id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: "1h" }
     );
+    
     res.status(200).json({ message: "Login successful", token });
   } catch (error) {
     console.error("Error occurred during login:", error);
